@@ -9,6 +9,8 @@
 
 module Blaze.React.Examples.TimeMachine
     ( withTimeMachine
+    , TMState
+    , TMAction
     ) where
 
 

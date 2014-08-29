@@ -38,8 +38,9 @@ library
 
                        Blaze.React
                        Blaze.React.Run.ReactJS
-                       Blaze.React.Examples.Todo
                        Blaze.React.Examples.Clock
+                       Blaze.React.Examples.Multiplexer
+                       Blaze.React.Examples.Todo
                        Blaze.React.Examples.TimeMachine
 
   build-depends:       base >=4.7 && <4.8,

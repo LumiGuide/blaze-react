@@ -8,6 +8,8 @@
 
 module Blaze.React.Examples.Todo
     ( app
+    , TodoAction(..)
+    , TodoState(..)
     ) where
 
 import           Prelude hiding (div)

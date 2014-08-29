@@ -7,6 +7,8 @@
 -- transform the state when they return.
 module Blaze.React.Examples.Clock
     ( app
+    , ClockAction(..)
+    , ClockState(..)
     ) where
 
 import           Prelude hiding (div)
