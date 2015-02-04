@@ -123,8 +123,6 @@ runApp (App initialState initialRequests apply renderAppState) = do
 
     -- create render callback for initialState
     let handleAction action requireSyncRedraw = do
-            putStrLn $ "runApp - applying action: " ++ show action ++
-                       (if requireSyncRedraw then " (sync redraw)" else "")
             requests <- atomicModifyIORef' stateVar (\state -> apply action state)
             handleRequests requests
             if requireSyncRedraw then syncRedraw else asyncRedraw
@@ -165,4 +163,3 @@ runApp (App initialState initialRequests apply renderAppState) = do
         handleRequests initialRequests
         -- keep main thread running forever
         forever $ threadDelay 10000000
-
