@@ -97,7 +97,10 @@ data DomDelta
     = PixelDelta DeltaValue
     | LineDelta  DeltaValue
     | PageDelta  DeltaValue
+      deriving (Show)
+
 data DeltaValue = DeltaValue { deltaX :: Double, deltaY :: Double, deltaZ :: Double }
+                deriving (Show)
 
 data File = File
     { fileName         :: T.Text

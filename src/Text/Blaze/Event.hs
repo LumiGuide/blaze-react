@@ -3,6 +3,8 @@
 module Text.Blaze.Event
     ( MouseButton(..)
     , MousePosition(..)
+    , DomDelta(..)
+    , DeltaValue(..)
     , Keycode
     , Charcode
 
