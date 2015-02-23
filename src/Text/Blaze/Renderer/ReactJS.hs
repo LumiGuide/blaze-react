@@ -277,6 +277,14 @@ lookupIntProp name obj = do
       Nothing -> left "lookupIntProp: couldn't parse field as Int"
       Just x  -> return x
 
+lookupBoolProp :: JSString -> JSRef a -> EitherT T.Text IO Bool
+lookupBoolProp name obj = do
+    ref <- lookupProp name obj
+    mbBool <- lift $ Marshal.fromJSRef ref
+    case mbBool of
+      Nothing -> left "lookupIntProp: couldn't parse field as Bool"
+      Just x  -> return x
+
 lookupDoubleProp :: JSString -> JSRef a -> EitherT T.Text IO Double
 lookupDoubleProp name obj = do
     ref <- lookupProp name obj
@@ -404,21 +412,32 @@ registerEventHandler eh props = case eh of
         pageY   <- lookupIntProp "pageY"   eventRef
         screenX <- lookupIntProp "screenX" eventRef
         screenY <- lookupIntProp "screenY" eventRef
+
         -- Uses the nativeEvent because the offset isn't supported by
         -- react js.
+        -- TODO (RvD): use something that isn't specific to Chrome.
         nativeEventRef <- lookupProp "nativeEvent" eventRef
         offsetX <- lookupIntProp "offsetX" nativeEventRef
         offsetY <- lookupIntProp "offsetY" nativeEventRef
 
+        altKey   <- lookupBoolProp "altKey"   eventRef
+        ctrlKey  <- lookupBoolProp "ctrlKey"  eventRef
+        metaKey  <- lookupBoolProp "metaKey"  eventRef
+        shiftKey <- lookupBoolProp "shiftKey" eventRef
+
         return MousePosition
-          { mpClientX = clientX
-          , mpClientY = clientY
-          , mpPageX   = pageX
-          , mpPageY   = pageY
-          , mpScreenX = screenX
-          , mpScreenY = screenY
-          , mpOffsetX = offsetX
-          , mpOffsetY = offsetY
+          { mpClientX  = clientX
+          , mpClientY  = clientY
+          , mpPageX    = pageX
+          , mpPageY    = pageY
+          , mpScreenX  = screenX
+          , mpScreenY  = screenY
+          , mpOffsetX  = offsetX
+          , mpOffsetY  = offsetY
+          , mpAltKey   = altKey
+          , mpCtrlKey  = ctrlKey
+          , mpMetaKey  = metaKey
+          , mpShiftKey = shiftKey
           }
 
     register

@@ -302,4 +302,3 @@ onWheelM = onEvent . OnWheel
 onEvent :: EventHandler act -> Attribute act
 onEvent eh = Attribute (OnEvent eh)
 {-# INLINE onEvent #-}
-

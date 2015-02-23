@@ -91,6 +91,10 @@ data MousePosition = MousePosition
       -- ^ x-position relative to the upper-left corner of the offsetParent element of the element that fires the event
     , mpOffsetY :: Int
       -- ^ y-position relative to the upper-left corner of the offsetParent element of the element that fires the event
+    , mpAltKey   :: Bool
+    , mpCtrlKey  :: Bool
+    , mpMetaKey  :: Bool
+    , mpShiftKey :: Bool
     } deriving (Eq, Show)
 
 data DomDelta
