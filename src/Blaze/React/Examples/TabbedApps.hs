@@ -78,14 +78,15 @@ fromSomeAction act = case act of
 applySomeAction
     :: WithWindowActions SomeAction
     -> SomeApp
-    -> (SomeApp, [IO (WithWindowActions SomeAction)])
+    -> (SomeApp, ([IO (WithWindowActions SomeAction)], Bool))
 applySomeAction someAct someApp@(SomeApp name st apply render) =
     case fromSomeAction someAct of
-      Nothing  -> (someApp, []) -- ignore actions from other apps
-                                -- TODO (meiersi): log this as a bug
+      -- ignore actions from other apps
+      -- TODO (meiersi): log this as a bug
+      Nothing  -> (someApp, ([], True))
       Just act ->
-        let (st', reqs) = apply act st
-        in  (SomeApp name st' apply render, map (fmap toSomeAction) reqs)
+        let (st', (reqs, shouldUpdate)) = apply act st
+        in  (SomeApp name st' apply render, (map (fmap toSomeAction) reqs, shouldUpdate))
 
 renderSomeApp :: SomeApp -> WindowState (WithWindowActions SomeAction)
 renderSomeApp (SomeApp _name st _apply render) =
@@ -118,22 +119,24 @@ applyTabbedAction
     :: TabbedAction -> Transition TabbedState TabbedAction
 applyTabbedAction act st = case act of
     PathChangedTo path -> case preview pathToRoute path of
-      Nothing                             -> (st, [])
+      Nothing                             -> (st, ([], True))
       Just (TabbedRoute appIdx innerPath) -> flip runTransitionM st $ do
         mkTransitionM $ applyTabbedAction $ AppAction $ SwitchApp appIdx
         mkTransitionM $ applyTabbedAction $ AppAction $ InnerA appIdx $ PathChangedTo innerPath
 
     AppAction (SwitchApp appIdx)
-      | nullOf (tsApps . ix appIdx) st -> (st, [])
-      | otherwise                      -> (set tsFocus appIdx st, [])
+      | nullOf (tsApps . ix appIdx) st -> (st, ([], True))
+      | otherwise                      -> (set tsFocus appIdx st, ([], True))
 
     AppAction (InnerA appIdx someAction) ->
       case preview (tsApps . ix appIdx) st of
-        Nothing      -> (st, [])
+        Nothing      -> (st, ([], True))
         Just someApp ->
-          let (someApp', reqs) = applySomeAction someAction someApp
+          let (someApp', (reqs, shouldUpdate)) = applySomeAction someAction someApp
           in ( set (tsApps . ix appIdx) someApp' st
-             , fmap (AppAction . InnerA appIdx) <$> reqs
+             , ( fmap (AppAction . InnerA appIdx) <$> reqs
+               , shouldUpdate
+               )
              )
 
 -- Routing
@@ -227,4 +230,3 @@ tabbed initialAppIdx apps = App
     , appApplyAction     = applyTabbedAction
     , appRender          = renderTabbedState
     }
-

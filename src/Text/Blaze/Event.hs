@@ -7,6 +7,8 @@ module Text.Blaze.Event
     , DeltaValue(..)
     , Keycode
     , Charcode
+    , DomNode(..)
+    , DomRect(..)
 
       -- * Event handling
     , mapActions
@@ -41,6 +43,9 @@ module Text.Blaze.Event
 
       -- ** Wheel Events
     , onWheel          , onWheelM
+
+      -- ** Component lifecycle Events
+    , onDomDidUpdate   , onDomDidUpdateM
 
     ) where
 
@@ -294,6 +299,16 @@ onWheelM :: (DomDelta -> IO act) -> Attribute act
 onWheelM = onEvent . OnWheel
 
 
+-- Component lifecycle events
+-------------------------------------------------------------------------------
+
+onDomDidUpdate :: (DomNode -> act) -> Attribute act
+onDomDidUpdate mkAct = onDomDidUpdateM $ return . mkAct
+
+onDomDidUpdateM :: (DomNode -> IO act) -> Attribute act
+onDomDidUpdateM = onLifeCycleEvent . OnDomDidUpdate
+
+
 -------------------------------------------------------------------------------
 -- Internal
 -------------------------------------------------------------------------------
@@ -302,3 +317,7 @@ onWheelM = onEvent . OnWheel
 onEvent :: EventHandler act -> Attribute act
 onEvent eh = Attribute (OnEvent eh)
 {-# INLINE onEvent #-}
+
+onLifeCycleEvent :: LifeCycleEventHandler act -> Attribute act
+onLifeCycleEvent eh = Attribute (OnLifeCycleEvent eh)
+{-# INLINE onLifeCycleEvent #-}

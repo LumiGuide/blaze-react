@@ -1,21 +1,36 @@
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Text.Blaze.Event.Internal
     ( EventHandler(..)
+    , LifeCycleEventHandler(..)
 
     , MouseButton(..)
     , MousePosition(..)
     , DomDelta(..)
     , DeltaValue(..)
     , File(..)
+    , DomNode(..)
+    , DomRect(..)
     ) where
 
+import           Control.Applicative ((<*>), pure)
+import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+
+import           Data.Functor ((<$>))
 import qualified Data.ByteString           as BS
 import qualified Data.Text                 as T
 import           Data.Time.Clock           (UTCTime)
 
 import           Text.Blaze.Event.Keycode  (Keycode)
 import           Text.Blaze.Event.Charcode (Charcode)
+
+import           GHCJS.Foreign (getPropMaybe)
+import qualified GHCJS.Marshal as Marshal
+import           GHCJS.Types (JSString, JSRef)
+import           GHCJS.Foreign.QQ (js)
+
 
 -- | One specific and incomplete specifications of event-handlers geared
 -- towards their use with ReactJS.
@@ -73,6 +88,10 @@ data EventHandler a
     -- OnTouchStart  (IO a)
     deriving (Functor)
 
+data LifeCycleEventHandler a
+   = OnDomDidUpdate (DomNode -> IO a)
+     deriving (Functor)
+
 data MouseButton = LeftButton | RightButton | MiddleButton deriving (Eq, Show)
 data MousePosition = MousePosition
     { mpClientX :: Int
@@ -113,3 +132,53 @@ data File = File
     , fileLastModified :: UTCTime
     , fileRead         :: IO BS.ByteString -- ^ Read the contents of the blob
     }
+
+data DomNode =
+     DomNode
+     { domNodeClassName :: !T.Text
+     , domNodeId        :: !T.Text
+     , domNodeTagName   :: !T.Text
+     , domNodeBoundingClientRect :: !DomRect
+     } deriving (Eq, Show)
+
+data DomRect =
+     DomRect
+     { domRectBottom :: !Int
+     , domRectHeight :: !Int
+     , domRectLeft   :: !Int
+     , domRectRight  :: !Int
+     , domRectTop    :: !Int
+     , domRectWidth  :: !Int
+     } deriving (Eq, Show)
+
+instance Marshal.FromJSRef DomNode where
+    fromJSRef nodeRef = runMaybeT $
+        DomNode <$> lookupProp' "className"
+                <*> lookupProp' "id"
+                <*> lookupProp' "tagName"
+                <*> lookupBoundingClientRect
+      where
+        lookupProp' name = lookupProp name nodeRef
+
+        lookupBoundingClientRect :: MaybeT IO DomRect
+        lookupBoundingClientRect = MaybeT $ do
+           rectRef <- [js| `nodeRef.getBoundingClientRect() |]
+           Marshal.fromJSRef rectRef
+
+
+instance Marshal.FromJSRef DomRect where
+    fromJSRef rectRef = runMaybeT $
+        DomRect <$> lookupProp' "bottom"
+                <*> lookupProp' "height"
+                <*> lookupProp' "left"
+                <*> lookupProp' "right"
+                <*> lookupProp' "top"
+                <*> lookupProp' "width"
+      where
+        lookupProp' name = lookupProp name rectRef
+
+lookupProp :: (Marshal.FromJSRef b) => JSString -> JSRef a -> MaybeT IO b
+lookupProp name obj = do
+    propRef <- MaybeT $ getPropMaybe name obj
+    propVal <- MaybeT $ Marshal.fromJSRef propRef
+    return propVal

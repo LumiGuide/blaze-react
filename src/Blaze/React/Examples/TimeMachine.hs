@@ -117,7 +117,7 @@ applyTMAction initialInternalState applyInternalAction action =
       activeAction <- use tmsActiveAction
       tmsActionHistory .= take activeAction history ++ [act]
 
-      (internalState', reqs) <- applyInternalAction act <$> use tmsInternalState
+      (internalState', (reqs, _shouldUpdate)) <- applyInternalAction act <$> use tmsInternalState
       tmsInternalState .= internalState'
       tell $ fmap (AppAction . AsyncInternalA) <$> reqs
 

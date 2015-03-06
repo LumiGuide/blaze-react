@@ -1,6 +1,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Blaze.React
     ( App(..)
@@ -16,11 +17,17 @@ module Blaze.React
     , runTransitionM
     , mkTransitionM
     , zoomTransition
+
+      -- * Controlling virtual DOM updates
+    , shouldUpdateDom
     ) where
 
-import Control.Lens (makeLenses, zoom, over, _2, LensLike')
+import Control.Lens (makeLenses, zoom, over, _1, _2, LensLike')
 import Control.Lens.Internal.Zoom (Focusing)
 import Data.Functor.Identity (Identity)
+
+import Data.Maybe (fromMaybe)
+import Data.Monoid (Last(..), getLast)
 
 import qualified Data.Text as T
 import           Data.Typeable
@@ -30,6 +37,7 @@ import qualified Text.Blaze.Html5           as H
 
 import           Control.Monad.State        (State, runState, get, put)
 import           Control.Monad.Trans.Writer (WriterT, runWriterT, tell, mapWriterT)
+import           Control.Monad.Trans.Class  (lift)
 
 
 -------------------------------------------------------------------------------
@@ -43,8 +51,8 @@ data App state action = App
     , appRender          :: !(state -> WindowState action)
     }
 
-type Transition  state action = state -> (state, [IO action])
-type TransitionM state action = WriterT [IO action] (State state) ()
+type Transition  state action = state -> (state, ([IO action], Bool))
+type TransitionM state action = WriterT [IO action] (WriterT (Last Bool) (State state)) ()
 
 data WindowState action = WindowState
     { _wsBody  :: !(H.Html action)
@@ -68,10 +76,18 @@ ignoreWindowActions (App initialState initialRequests applyAction render) = App
     { appInitialState = initialState
     , appInitialRequests = (map (fmap AppAction) initialRequests)
     , appApplyAction = \action state -> case action of
-        PathChangedTo _ -> (state, [])
-        AppAction x   -> over _2 (map (fmap AppAction)) $ applyAction x state
+        PathChangedTo _ -> (state, ([], True))
+        AppAction x   -> over (_2 . _1) (map (fmap AppAction)) $ applyAction x state
     , appRender = over wsBody (E.mapActions AppAction) . render
     }
+
+-------------------------------------------------------------------------------
+-- Virtual DOM updates
+-------------------------------------------------------------------------------
+
+shouldUpdateDom :: Bool -> TransitionM s a
+shouldUpdateDom = lift . tell . Last . Just
+
 
 -------------------------------------------------------------------------------
 -- Writing transitions
@@ -79,28 +95,29 @@ ignoreWindowActions (App initialState initialRequests applyAction render) = App
 
 runTransitionM :: TransitionM s a -> Transition s a
 runTransitionM transition oldState =
-    let ((_, reqs), newState) = runState (runWriterT transition) oldState
-    in (newState, reqs)
+    let (((_, reqs), shouldUpdate), newState) = runState (runWriterT $ runWriterT transition) oldState
+    in (newState, (reqs, fromMaybe True $ getLast shouldUpdate))
 
 mkTransitionM :: Transition s a -> TransitionM s a
 mkTransitionM fn = do
     oldState <- get
-    let (newState, writes) = fn oldState
+    let (newState, (writes, shouldUpdate)) = fn oldState
     put newState
     tell writes
+    lift $ tell $ Last $ Just shouldUpdate
 
 zoomTransition
-    :: (innerA -> outerA)
-    -> LensLike' (Focusing Identity ((), [IO outerA])) outerS innerS
+    :: forall innerA outerA
+              innerS outerS
+     . (innerA -> outerA)
+    -> LensLike' (Focusing Identity (((), [IO outerA]), Last Bool)) outerS innerS
        -- ^ This can be a @'Lens\'' innerS outerS@ or
        -- @'Traversal\'' innerS outerS@
     -> TransitionM innerS innerA
     -> TransitionM outerS outerA
 zoomTransition wrapAction stateLens =
     mapWriterT $
-      zoom stateLens .
-        fmap -- State
-          (fmap -- Pair
-            (fmap -- List
-              (fmap -- IO
-                wrapAction)))
+      mapWriterT $
+        zoom stateLens
+        . fmap (\(((x,                        innerReqs), shouldUpdate)) ->
+                  ((x, fmap (fmap wrapAction) innerReqs), shouldUpdate))

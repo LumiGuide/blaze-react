@@ -28,7 +28,7 @@ initialRTState = ""
 -- | When the user requests a path change, we oblige.
 applyRTAction :: RTAction -> Transition RTState RTAction
 applyRTAction action _oldPath = case action of
-    PathChangedTo path -> (path, [])
+    PathChangedTo path -> (path, ([], True))
     AppAction _ -> undefined -- GHC's case analyzer seems to be unfamiliar with Void
 
 renderRTState :: RTState -> WindowState RTAction

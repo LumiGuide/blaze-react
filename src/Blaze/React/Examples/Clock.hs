@@ -52,7 +52,7 @@ data ClockAction
     = TickA UTCTime
     deriving (Show, Typeable)
 
-applyClockAction :: ClockAction -> ClockState -> (ClockState, [IO ClockAction])
+applyClockAction :: ClockAction -> ClockState -> (ClockState, ([IO ClockAction], Bool))
 applyClockAction action =
     runTransitionM $ case action of
       TickA time -> do
@@ -75,4 +75,3 @@ app = App
     , appApplyAction     = applyClockAction
     , appRender          = renderClockState
     }
-

@@ -1,6 +1,6 @@
-
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Blaze.React.Run.ReactJS
     ( runApp
@@ -20,16 +20,17 @@ import           Data.Maybe            (fromMaybe)
 import           Data.Monoid           ((<>))
 import qualified Data.Text             as T
 
-import           GHCJS.Types           (JSRef, JSString, JSObject, JSFun)
+import           GHCJS.Types           (JSRef, JSString, JSObject, JSFun, castRef)
 import qualified GHCJS.Foreign         as Foreign
 import           GHCJS.Foreign.QQ      (js, js_)
+import qualified GHCJS.Marshal         as Marshal
 
 import           Prelude hiding (div)
 
 import           System.IO             (fixIO)
 
 import qualified Text.Blaze.Renderer.ReactJS    as ReactJS
-
+import           Text.Blaze.Event.Internal (LifeCycleEventHandler(..))
 
 
 ------------------------------------------------------------------------------
@@ -47,12 +48,21 @@ data DOMNode_
 data ReactJSApp_
 
 foreign import javascript unsafe
-    "h$reactjs.mountApp($1, $2)"
+    "h$reactjs.queryLifeCycleNode($1, $2)"
+    queryLifeCycleNode
+        :: JSRef DOMNode_
+        -> Int
+        -> IO (JSRef DOMNode_)
+
+foreign import javascript unsafe
+    "h$reactjs.mountApp($1, $2, $3, $4)"
     mountReactApp
         :: JSRef DOMNode_                          -- ^ Browser DOM node
         -> JSFun (JSObject ReactJS.ReactJSNode -> IO ())
            -- ^ render callback that stores the created nodes in the 'node'
            -- property of the given object.
+        -> JSFun (JSRef DOMNode_ -> IO ())
+        -> JSFun (JSObject ReactJS.ReactJSNode -> IO ())
         -> IO (JSRef ReactJSApp_)
 
 foreign import javascript unsafe
@@ -88,7 +98,7 @@ atAnimationFrame io = do
 runApp' :: (Show act) => App st act -> IO ()
 runApp' = runApp . ignoreWindowActions
 
-runApp :: (Show act) => App st (WithWindowActions act) -> IO ()
+runApp :: forall st act. (Show act) => App st (WithWindowActions act) -> IO ()
 runApp (App initialState initialRequests apply renderAppState) = do
     -- create root element in body for the app
     root <- [js| document.createElement('div') |]
@@ -98,6 +108,9 @@ runApp (App initialState initialRequests apply renderAppState) = do
     stateVar           <- newIORef initialState  -- The state of the app
     redrawScheduledVar <- newIORef False         -- True if a redraw was scheduled
     rerenderVar        <- newIORef Nothing       -- IO function to actually render the DOM
+    shouldUpdateVar    <- newIORef True
+
+    lifeCycleEventHandlersVar <- newIORef ([] :: [(Int, LifeCycleEventHandler (WithWindowActions act))])
 
     -- This is a cache of the URL fragment (hash) to prevent unnecessary
     -- updates.
@@ -122,15 +135,18 @@ runApp (App initialState initialRequests apply renderAppState) = do
             setRoute $ Foreign.toJSString $ "#" <> newPath
 
     -- create render callback for initialState
-    let handleAction action requireSyncRedraw = do
-            requests <- atomicModifyIORef' stateVar (\state -> apply action state)
+    let handleAction :: WithWindowActions act -> Bool -> IO ()
+        handleAction action requireSyncRedraw = do
+            -- print action
+            (requests, shouldUpdate) <- atomicModifyIORef' stateVar $ apply action
+            writeIORef shouldUpdateVar shouldUpdate
             handleRequests requests
             if requireSyncRedraw then syncRedraw else asyncRedraw
+
         handleRequests requests = do
           forM_ requests $ \req -> forkIO $ do
             action <- req
             handleAction action False
-
 
         mkRenderCb :: IO (JSFun (JSObject ReactJS.ReactJSNode -> IO ()))
         mkRenderCb = do
@@ -138,8 +154,9 @@ runApp (App initialState initialRequests apply renderAppState) = do
                 state <- readIORef stateVar
                 let (WindowState body path) = renderAppState state
                 updatePath path
-                node <- ReactJS.renderHtml handleAction body
+                (node, lifeCycleEventHandlers) <- ReactJS.renderHtml handleAction body
                 Foreign.setProp ("node" :: JSString) node objRef
+                writeIORef lifeCycleEventHandlersVar lifeCycleEventHandlers
 
     onPathChange <- Foreign.syncCallback1 Foreign.AlwaysRetain False $
       \pathStr -> do
@@ -152,14 +169,37 @@ runApp (App initialState initialRequests apply renderAppState) = do
           handleAction (PathChangedTo newPath) True
     attachPathWatcher onPathChange
 
+    let mkDidUpdateCb :: IO (JSFun (JSRef DOMNode_ -> IO ()))
+        mkDidUpdateCb =
+            Foreign.syncCallback1 Foreign.AlwaysRetain False $ \objRef -> do
+                lifeCycleEventHandlers <- readIORef lifeCycleEventHandlersVar
+                forM_ lifeCycleEventHandlers $ \(elemId, eh) ->
+                  case eh of
+                    OnDomDidUpdate f -> do
+                        node <- queryLifeCycleNode objRef elemId
+                        mbDomNode <- Marshal.fromJSRef $ castRef node
+                        case mbDomNode of
+                          Just domNode -> do
+                            act <- f domNode
+                            handleAction act False
+                          Nothing -> error "mkDidUpdateDb: couldn't find dom node"
+
+        mkShouldUpdateCb :: IO (JSFun (JSObject ReactJS.ReactJSNode -> IO ()))
+        mkShouldUpdateCb =
+            Foreign.syncCallback1 Foreign.AlwaysRetain False $ \objRef -> do
+              result <- readIORef shouldUpdateVar
+              Foreign.setProp ("result" :: JSString) (Foreign.toJSBool result) objRef
+
     -- mount and redraw app
-    bracket mkRenderCb Foreign.release $ \renderCb -> do
-        app <- mountReactApp root renderCb
-        -- manually tie the knot between the event handlers
-        writeIORef rerenderVar (Just (syncRedrawApp app))
-        -- start the first drawing
-        syncRedraw
-        -- handle the initial requests
-        handleRequests initialRequests
-        -- keep main thread running forever
-        forever $ threadDelay 10000000
+    bracket mkRenderCb Foreign.release $ \renderCb ->
+      bracket mkDidUpdateCb Foreign.release $ \didUpdateCb ->
+        bracket mkShouldUpdateCb Foreign.release $ \shouldUpdateCb -> do
+          app <- mountReactApp root renderCb didUpdateCb shouldUpdateCb
+          -- manually tie the knot between the event handlers
+          writeIORef rerenderVar (Just (syncRedrawApp app))
+          -- start the first drawing
+          syncRedraw
+          -- handle the initial requests
+          handleRequests initialRequests
+          -- keep main thread running forever
+          forever $ threadDelay 10000000

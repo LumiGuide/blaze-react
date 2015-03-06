@@ -18,9 +18,12 @@ import           Control.Monad.Trans.Either ( runEitherT, EitherT(..), left)
 
 import qualified Data.ByteString.Char8 as SBC
 import           Data.List             (isInfixOf)
-import           Data.Monoid           ((<>))
+import           Data.Monoid           (mempty, (<>))
 import qualified Data.Text             as T
 import qualified Data.ByteString       as S
+import           Data.IORef ( IORef, newIORef, readIORef, writeIORef )
+
+import qualified Data.DList            as DL
 
 import qualified GHCJS.Foreign         as Foreign
 import           GHCJS.Marshal         as Marshal
@@ -108,28 +111,39 @@ render
        Show act
     => (act -> Bool -> IO ())  -- ^ Callback for actions raised by event handlers.
     -> Markup act
-    -> IO ReactJSNodes
+    -> IO (ReactJSNodes, [(Int, LifeCycleEventHandler act)])
 render handleAct0 markup = do
     children <- Foreign.newArray
-    go handleAct0 (\_props -> return ()) children markup
-    return children
+    nodeIdVar <- newIORef 0
+    lifeCycleEventHandlers <- go nodeIdVar handleAct0 (\_props -> return ()) children markup
+    return (children, DL.toList lifeCycleEventHandlers)
   where
-    go :: forall act' b.
-          (act' -> Bool -> IO ())
+    go :: forall act' b
+        . IORef Int
+       -> (act' -> Bool -> IO ())
        -> (JSObject JSString -> IO ())
        -> (JSArray ReactJSNode)
        -> MarkupM act' b
-       -> IO ()
-    go handleAct setProps children html0 = case html0 of
+       -> IO (DL.DList (Int, LifeCycleEventHandler act'))
+    go nodeIdVar handleAct setProps children html0 = case html0 of
         MapActions f h ->
-            go (handleAct . f) setProps children h
+            (DL.fromList . map (fmap (fmap f)) . DL.toList) <$> go nodeIdVar (handleAct . f) setProps children h
 
         OnEvent handler h -> do
             let setProps' props = do
                     registerEventHandler (handleAct <$> handler) props
                     setProps props
 
-            go handleAct setProps' children h
+            go nodeIdVar handleAct setProps' children h
+
+        OnLifeCycleEvent handler h -> do
+            freshId <- readIORef nodeIdVar
+            writeIORef nodeIdVar $! freshId + 1
+            freshIdJs <- Marshal.toJSRef freshId
+            let setProps' props = do
+                    Foreign.setProp ("data-life-cycle-id" :: JSString) freshIdJs props
+                    setProps props
+            DL.cons (freshId, handler) <$> go nodeIdVar handleAct setProps' children h
 
         Parent tag _open _close h -> tagToVNode (staticStringToJs tag) h
         CustomParent tag h        -> tagToVNode (choiceStringToJs tag) h
@@ -152,17 +166,17 @@ render handleAct0 markup = do
             jsObj <- Marshal.toJSRef_aeson jsonObject
             setProperty (staticStringToJs key) jsObj h
 
-        Empty           -> return ()
+        Empty           -> return mempty
         Append h1 h2    -> do
-            go handleAct setProps children h1
-            go handleAct setProps children h2
+            (<>) <$> go nodeIdVar handleAct setProps children h1
+                 <*> go nodeIdVar handleAct setProps children h2
       where
         choiceStringToJs cs = Foreign.toJSString (fromChoiceString cs "")
         staticStringToJs ss = Foreign.toJSString (getText ss)
 
         -- setProperty :: JSString -> JSRef a -> MarkupM (EventHandler act') b -> IO ()
         setProperty key value content =
-            go handleAct setProps' children content
+            go nodeIdVar handleAct setProps' children content
           where
             setProps' props =
                 Foreign.setProp key value props >> setProps props
@@ -175,28 +189,31 @@ render handleAct0 markup = do
         tagToVNode tag content = do
             props         <- makePropertiesObject
             innerChildren <- Foreign.newArray
-            go handleAct (\_props -> return ()) innerChildren content
+            es <- go nodeIdVar handleAct (\_props -> return ()) innerChildren content
             node <- mkReactJSParent tag props innerChildren
             Foreign.pushArray node children
+            return es
 
         leafToVNode tag = do
             props <- makePropertiesObject
             node  <- mkReactJSLeaf tag props
             Foreign.pushArray node children
+            return mempty
 
-        textToVNode :: JSString -> IO ()
-        textToVNode jsText = Foreign.pushArray jsText children
+        textToVNode :: JSString -> IO (DL.DList (Int, LifeCycleEventHandler act'))
+        textToVNode jsText = mempty <$ Foreign.pushArray jsText children
 
 
 renderHtml
     :: Show act
     => (act -> Bool -> IO ())
     -> Markup act
-    -> IO (ReactJSNode)
+    -> IO (ReactJSNode, [(Int, LifeCycleEventHandler act)])
 renderHtml handleAction html = do
-    children <- render handleAction html
+    (children, lifeCycleEventHandlers) <- render handleAction html
     props <- Foreign.newObj
-    mkReactJSParent "div" props children
+    node <- mkReactJSParent "div" props children
+    return (node, lifeCycleEventHandlers)
 
 
 ------------------------------------------------------------------------------
@@ -364,9 +381,6 @@ registerEventHandler eh props = case eh of
               2 -> return $ PageDelta deltaValue
               _ -> left "registerEventHandler: unrecognized delta mode"
         return $ HandleEvent $ mkAct domDelta
-
-
-
 
   where
     handleKeyEvent eventRef keys mkAct = runEitherT $ do

@@ -30,30 +30,53 @@ function mkDomNode(tag, props, children) {
 }
 
 var GhcjsApp = React.createClass({
-        displayName: "GhcjsApp",
-        render:      function() {
-                         // FIXME (SM): Undo this resetting of this or report
-                         // this bug to GHCJS.
-                         //
-                         // Find a better way for a callback to return a
-                         // value.
-                         //
-                         var smuggler = {};
-                         this.props.onRender.apply(window, [smuggler]);
-                         return smuggler.node;
-                     }
+        displayName: "GhcjsApp"
+      , render:      function() {
+                       // FIXME (SM): Undo this resetting of this or report
+                       // this bug to GHCJS.
+                       //
+                       // Find a better way for a callback to return a
+                       // value.
+                       //
+                       var smuggler = {};
+                       this.props.onRender.apply(window, [smuggler]);
+                       return smuggler.node;
+      }
+      // , componentWillMount   : function() { console.log("componentWillMount"); }
+      // , componentWillUpdate  : function() { console.log("componentWillUpdate"); }
+      // , componentWillUnmount : function() { console.log("componentWillUnmount"); }
+      , componentDidMount : function() {
+          this.props.onDidUpdate(this.getDOMNode());
+      }
+      , componentDidUpdate : function() {
+          this.props.onDidUpdate(this.getDOMNode());
+      }
+      , shouldComponentUpdate : function(nextProps, nextState) {
+          var smuggler = {};
+          this.props.shouldUpdate.apply(window, [smuggler]);
+          return smuggler.result;
+      }
     });
 
 var GhcjsAppFactory = React.createFactory(GhcjsApp);
 
-function mountApp(domNode, renderCb) {
-    return { onRender: renderCb,
-             domNode : domNode
+function queryLifeCycleNode(rootNode, elemId) {
+    return rootNode.querySelectorAll("[data-life-cycle-id='" + elemId + "']")[0];
+}
+
+function mountApp(domNode, renderCb, didUpdateCb, shouldUpdateCb) {
+    return { domNode : domNode
+           , onRender: renderCb
+           , onDidUpdate : didUpdateCb
+           , shouldUpdate : shouldUpdateCb
            };
 }
 
 function syncRedrawApp(app) {
-    React.render(GhcjsAppFactory({onRender: app.onRender}), app.domNode);
+    React.render(GhcjsAppFactory({ onRender: app.onRender
+                                 , onDidUpdate: app.onDidUpdate
+                                 , shouldUpdate: app.shouldUpdate
+                                 }), app.domNode);
 }
 
 function attachRouteWatcher(routeChangeCb) {
@@ -70,6 +93,7 @@ function setRoute(route) {
 
 module.exports =
     { mkDomNode:          mkDomNode
+    , queryLifeCycleNode: queryLifeCycleNode
     , mountApp:           mountApp
     , syncRedrawApp:      syncRedrawApp
     , attachRouteWatcher: attachRouteWatcher

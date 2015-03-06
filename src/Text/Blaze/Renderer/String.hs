@@ -73,6 +73,9 @@ renderString =
         OnEvent _ev content ->
             -- TODO (meiersi): add more details about the event handler registered.
             go attrs content
+        OnLifeCycleEvent _ev content ->
+            -- TODO (roelvandijk): add more details about the event handler registered.
+            go attrs content
         Parent _ open close content ->
             getString open . attrs . ('>' :) . go id content . getString close
         CustomParent tag content ->

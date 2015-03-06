@@ -145,6 +145,7 @@ data MarkupM act a
       -- | Install event handlers for the given event on all immediate
       -- children.
     | OnEvent (EventHandler act) (MarkupM act a)
+    | OnLifeCycleEvent (LifeCycleEventHandler act) (MarkupM act a)
       -- | Tag, open tag, end tag, content
     | forall b. Parent StaticString StaticString StaticString (MarkupM act b)
       -- | Custom parent
@@ -492,6 +493,7 @@ instance Attributable (MarkupM ev a -> MarkupM ev b) ev where
 external :: MarkupM ev a -> MarkupM ev a
 external (MapActions f x) = MapActions f (external x)
 external (OnEvent ev x) = OnEvent ev (external x)
+external (OnLifeCycleEvent ev x) = OnLifeCycleEvent ev (external x)
 external (Content x) = Content $ External x
 external (Append x y) = Append (external x) (external y)
 external (Parent x y z i) = Parent x y z $ external i
@@ -516,6 +518,7 @@ external x = x
 contents :: MarkupM ev a -> MarkupM ev' b
 contents (MapActions _ c)           = contents c
 contents (OnEvent _ c)              = contents c
+contents (OnLifeCycleEvent _ c)     = contents c
 contents (Parent _ _ _ c)           = contents c
 contents (CustomParent _ c)         = contents c
 contents (Content c)                = Content c
@@ -532,6 +535,7 @@ null :: MarkupM ev a -> Bool
 null markup = case markup of
     MapActions _ c           -> null c
     OnEvent _ c              -> null c
+    OnLifeCycleEvent _ c     -> null c
     Parent _ _ _ _           -> False
     CustomParent _ _         -> False
     Leaf _ _ _               -> False
