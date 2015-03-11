@@ -427,13 +427,6 @@ registerEventHandler eh props = case eh of
         screenX <- lookupIntProp "screenX" eventRef
         screenY <- lookupIntProp "screenY" eventRef
 
-        -- Uses the nativeEvent because the offset isn't supported by
-        -- react js.
-        -- TODO (RvD): use something that isn't specific to Chrome.
-        nativeEventRef <- lookupProp "nativeEvent" eventRef
-        offsetX <- lookupIntProp "offsetX" nativeEventRef
-        offsetY <- lookupIntProp "offsetY" nativeEventRef
-
         altKey   <- lookupBoolProp "altKey"   eventRef
         ctrlKey  <- lookupBoolProp "ctrlKey"  eventRef
         metaKey  <- lookupBoolProp "metaKey"  eventRef
@@ -446,8 +439,6 @@ registerEventHandler eh props = case eh of
           , mpPageY    = pageY
           , mpScreenX  = screenX
           , mpScreenY  = screenY
-          , mpOffsetX  = offsetX
-          , mpOffsetY  = offsetY
           , mpAltKey   = altKey
           , mpCtrlKey  = ctrlKey
           , mpMetaKey  = metaKey

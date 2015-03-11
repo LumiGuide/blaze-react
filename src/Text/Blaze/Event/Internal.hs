@@ -15,7 +15,7 @@ module Text.Blaze.Event.Internal
     , DomRect(..)
     ) where
 
-import           Control.Applicative ((<*>), pure)
+import           Control.Applicative ((<*>))
 import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 
 import           Data.Functor ((<$>))
@@ -106,10 +106,6 @@ data MousePosition = MousePosition
       -- ^ x-position relative to the upper-left corner of the physical screen
     , mpScreenY :: Int
       -- ^ y-position relative to the upper-left corner of the physical screen
-    , mpOffsetX :: Int
-      -- ^ x-position relative to the upper-left corner of the offsetParent element of the element that fires the event
-    , mpOffsetY :: Int
-      -- ^ y-position relative to the upper-left corner of the offsetParent element of the element that fires the event
     , mpAltKey   :: Bool
     , mpCtrlKey  :: Bool
     , mpMetaKey  :: Bool
