@@ -55,7 +55,7 @@ library
                        Blaze.React.Examples.TimeMachine
                        Blaze.React.Examples.Todo
 
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7
                      , bytestring
                      , dlist
                      , either

@@ -14,7 +14,6 @@ module Blaze.React.Examples.MultiUser
 
 import Blaze.React
 
-import Control.Applicative ((<$>))
 import Control.Lens        (makeLenses, at, (^.), (.=), use, non, view)
 
 import           Data.Hashable       (Hashable)

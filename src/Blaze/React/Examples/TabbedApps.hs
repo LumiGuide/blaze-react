@@ -14,10 +14,8 @@ module Blaze.React.Examples.TabbedApps
 
 import           Blaze.React
 
-import           Control.Applicative
-import           Control.Lens hiding (act)
+import           Control.Lens
 
-import           Data.Foldable       (foldMap)
 import qualified Data.HashMap.Strict as HMS
 import           Data.Monoid         ((<>))
 import qualified Data.Text           as T

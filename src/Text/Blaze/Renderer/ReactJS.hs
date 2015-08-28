@@ -19,7 +19,7 @@ import           Control.Monad.Trans.Either ( runEitherT, EitherT(..), left)
 import qualified Data.ByteString.Char8 as SBC
 import qualified Data.HashMap.Strict   as HMS
 import           Data.List             (isInfixOf)
-import           Data.Monoid           (mempty, (<>))
+import           Data.Monoid           ((<>))
 import qualified Data.Text             as T
 import qualified Data.ByteString       as S
 import           Data.IORef ( IORef, newIORef, readIORef, writeIORef )

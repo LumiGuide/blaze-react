@@ -67,7 +67,7 @@ module Text.Blaze
     ) where
 
 import Data.Int (Int32, Int64)
-import Data.Word (Word, Word32, Word64)
+import Data.Word (Word32, Word64)
 
 import Data.Text (Text)
 import qualified Data.Text.Lazy as LT

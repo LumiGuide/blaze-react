@@ -15,10 +15,8 @@ module Text.Blaze.Event.Internal
     , DomRect(..)
     ) where
 
-import           Control.Applicative ((<*>))
 import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 
-import           Data.Functor ((<$>))
 import qualified Data.ByteString           as BS
 import qualified Data.Text                 as T
 import           Data.Time.Clock           (UTCTime)

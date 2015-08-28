@@ -15,17 +15,15 @@ import           Prelude hiding (div)
 
 import           Blaze.React
 
-import           Control.Applicative
 import           Control.Lens
-                 ( makeLenses, view, traverse, folded, set, ix
+                 ( makeLenses, view, folded, set, ix
                  , to, _2, _Just, sumOf, (%=), (.=), preuse, use
                  )
 import           Control.Monad
 import           Control.Monad.Trans.Maybe        (MaybeT(..), runMaybeT)
 
-import           Data.Foldable   (foldMap)
 import           Data.Maybe      (fromMaybe)
-import           Data.Monoid     ((<>), mempty)
+import           Data.Monoid     ((<>))
 import qualified Data.Text       as T
 import           Data.Typeable   (Typeable)
 
@@ -271,5 +269,3 @@ initialState = TodoState
     , _tsEditFocus = Nothing
     , _tsItems = []
     }
-
-

@@ -14,7 +14,6 @@ import           Prelude hiding (div)
 
 import           Blaze.React
 
-import           Control.Applicative
 import           Control.Concurrent         (threadDelay)
 import           Control.Lens               (makeLenses, (.=), view)
 import           Control.Monad.Trans.Writer (tell)

@@ -68,14 +68,12 @@ module Text.Blaze.Internal
     , null
     ) where
 
-import           Control.Applicative
 
 import           Data.ByteString.Char8        (ByteString)
 import qualified Data.ByteString              as B
 import qualified Data.ByteString.Lazy         as BL
 import qualified Data.HashMap.Strict          as HMS
 import qualified Data.List                    as List
-import           Data.Monoid                  (Monoid, mappend, mempty, mconcat)
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Text.Encoding           as T
