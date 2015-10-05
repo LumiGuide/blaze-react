@@ -13,7 +13,7 @@ module Text.Blaze.Renderer.ReactJS
 
 import           Control.Applicative
 import           Control.Monad
-import           Control.Monad.Trans        (lift)
+import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.Either ( runEitherT, EitherT(..), left)
 
 import qualified Data.ByteString.Char8 as SBC
@@ -27,8 +27,16 @@ import           Data.IORef ( IORef, newIORef, readIORef, writeIORef )
 import qualified Data.DList            as DL
 
 import qualified GHCJS.Foreign         as Foreign
+import qualified GHCJS.Foreign.Callback as Foreign
 import           GHCJS.Marshal         as Marshal
-import           GHCJS.Types           (JSString, JSRef, JSArray, JSObject, castRef)
+import           GHCJS.Types           (JSRef, isUndefined, jsref)
+import           Data.JSString         (JSString)
+import qualified Data.JSString.Text    as JSString (textToJSString, textFromJSString)
+import qualified Data.JSString         as JSString
+import           JavaScript.Object     (Object)
+import qualified JavaScript.Object     as Object
+import           JavaScript.Array      (MutableJSArray)
+import qualified JavaScript.Array      as Array
 
 import           Prelude               hiding (span)
 
@@ -42,23 +50,19 @@ import           Text.Blaze.Event.Keycode    (unKeycode)
 -- FFI to ReactJS
 ------------------------------------------------------------------------------
 
-data ReactJSEvent_
-type ReactJSEvent = JSRef ReactJSEvent_
-
-data ReactJSNode_
-type ReactJSNode = JSRef ReactJSNode_
-
-type ReactJSNodes = JSArray ReactJSNode
+type ReactJSEvent = Object
+type ReactJSNode  = JSRef
+type ReactJSNodes = MutableJSArray
 
 
 foreign import javascript unsafe
     "h$reactjs.mkDomNode($1, $2, $3)"
     mkReactJSParent
-        :: JSString -> JSObject JSString -> ReactJSNodes -> IO ReactJSNode
+        :: JSString -> Object -> ReactJSNodes -> IO ReactJSNode
 
 foreign import javascript unsafe
     "h$reactjs.mkDomNode($1, $2, [])"
-    mkReactJSLeaf :: JSString -> JSObject JSString -> IO ReactJSNode
+    mkReactJSLeaf :: JSString -> Object -> IO ReactJSNode
 
 foreign import javascript unsafe
     "$1.preventDefault()"
@@ -114,7 +118,7 @@ render
     -> Markup act
     -> IO (ReactJSNodes, [(Int, LifeCycleEventHandler act)])
 render handleAct0 markup = do
-    children <- Foreign.newArray
+    children <- Array.create
     nodeIdVar <- newIORef 0
     lifeCycleEventHandlers <- go nodeIdVar handleAct0 (\_props -> return ()) children markup
     return (children, DL.toList lifeCycleEventHandlers)
@@ -122,13 +126,14 @@ render handleAct0 markup = do
     go :: forall act' b
         . IORef Int
        -> (act' -> Bool -> IO ())
-       -> (JSObject JSString -> IO ())
-       -> (JSArray ReactJSNode)
+       -> (Object -> IO ())
+       -> MutableJSArray
        -> MarkupM act' b
        -> IO (DL.DList (Int, LifeCycleEventHandler act'))
     go nodeIdVar handleAct setProps children html0 = case html0 of
         MapActions f h ->
-            (DL.fromList . map (fmap (fmap f)) . DL.toList) <$> go nodeIdVar (handleAct . f) setProps children h
+            (DL.fromList . map (fmap (fmap f)) . DL.toList) <$>
+              go nodeIdVar (handleAct . f) setProps children h
 
         OnEvent handler h -> do
             let setProps' props = do
@@ -142,7 +147,7 @@ render handleAct0 markup = do
             writeIORef nodeIdVar $! freshId + 1
             freshIdJs <- Marshal.toJSRef freshId
             let setProps' props = do
-                    Foreign.setProp ("data-life-cycle-id" :: JSString) freshIdJs props
+                    Object.setProp ("data-life-cycle-id" :: JSString) freshIdJs props
                     setProps props
             DL.cons (freshId, handler) <$> go nodeIdVar handleAct setProps' children h
 
@@ -153,7 +158,7 @@ render handleAct0 markup = do
         Content content           -> textToVNode (choiceStringToJs content)
 
         AddAttribute key _preparedKey value h -> do
-            setProperty (staticStringToJs key) (choiceStringToJs value) h
+            setProperty (staticStringToJs key) (jsref $ choiceStringToJs value) h
 
         AddBoolAttribute key value h -> do
             setProperty (staticStringToJs key) (Foreign.toJSBool value) h
@@ -161,57 +166,62 @@ render handleAct0 markup = do
         -- FIXME (SM): This is not going to work in all cases, as 'attributes'
         -- must be set differently from properties.
         AddCustomAttribute key value h ->
-            setProperty (choiceStringToJs key) (choiceStringToJs value) h
+            setProperty (choiceStringToJs key) (jsref $ choiceStringToJs value) h
 
         AddObjectAttribute key object h -> do
             jsObj <- toJSRef_hashMap object
-            setProperty (staticStringToJs key) jsObj h
+            setProperty (staticStringToJs key) (jsref jsObj) h
 
         Empty           -> return mempty
         Append h1 h2    -> do
             (<>) <$> go nodeIdVar handleAct setProps children h1
                  <*> go nodeIdVar handleAct setProps children h2
       where
-        choiceStringToJs cs = Foreign.toJSString (fromChoiceString cs "")
-        staticStringToJs ss = Foreign.toJSString (getText ss)
+        choiceStringToJs cs = JSString.pack (fromChoiceString cs "")
+        staticStringToJs ss = JSString.textToJSString (getText ss)
 
-        -- setProperty :: JSString -> JSRef a -> MarkupM (EventHandler act') b -> IO ()
+        setProperty
+            :: JSString
+            -> JSRef
+            -> MarkupM act' b
+            -> IO (DL.DList (Int, LifeCycleEventHandler act'))
         setProperty key value content =
             go nodeIdVar handleAct setProps' children content
           where
             setProps' props =
-                Foreign.setProp key value props >> setProps props
+                Object.setProp key value props >> setProps props
 
         makePropertiesObject = do
-            props <- Foreign.newObj
+            props <- Object.create
             setProps props
             return props
 
         tagToVNode tag content = do
             props         <- makePropertiesObject
-            innerChildren <- Foreign.newArray
+            innerChildren <- Array.create
             es <- go nodeIdVar handleAct (\_props -> return ()) innerChildren content
             node <- mkReactJSParent tag props innerChildren
-            Foreign.pushArray node children
+            Array.push node children
             return es
 
         leafToVNode tag = do
             props <- makePropertiesObject
             node  <- mkReactJSLeaf tag props
-            Foreign.pushArray node children
+            Array.push node children
             return mempty
 
         textToVNode :: JSString -> IO (DL.DList (Int, LifeCycleEventHandler act'))
-        textToVNode jsText = mempty <$ Foreign.pushArray jsText children
+        textToVNode jsText = mempty <$ Array.push (jsref jsText) children
 
 -- TODO (asayers): Something like this should probably be added to GHCJS.Marshall:
 -- toJSRef_hashMap :: (IsString a, ToJSRef b)
 --                 => HMS.HashMap a b
 --                 -> IO (JSRef (HMS.HashMap a b))
-toJSRef_hashMap :: HMS.HashMap T.Text T.Text -> IO (JSRef (HMS.HashMap T.Text T.Text))
-toJSRef_hashMap hashmap = fmap castRef $ do
-    obj <- Foreign.newObj
-    let addProp k v = Foreign.setProp k (Foreign.toJSString v) obj
+toJSRef_hashMap :: HMS.HashMap T.Text T.Text -> IO Object
+toJSRef_hashMap hashmap = do
+    obj <- Object.create
+    let addProp k v = Object.setProp (JSString.textToJSString k)
+                                     (jsref $ JSString.textToJSString v) obj
     void $ HMS.traverseWithKey addProp hashmap
     return obj
 
@@ -222,7 +232,7 @@ renderHtml
     -> IO (ReactJSNode, [(Int, LifeCycleEventHandler act)])
 renderHtml handleAction html = do
     (children, lifeCycleEventHandlers) <- render handleAction html
-    props <- Foreign.newObj
+    props <- Object.create
     node <- mkReactJSParent "div" props children
     return (node, lifeCycleEventHandlers)
 
@@ -290,33 +300,35 @@ reactEventName ev = case ev of
     OnScrollE      -> "onScroll"
     OnWheelE       -> "onWheel"
 
-lookupProp :: JSString -> JSRef a -> EitherT T.Text IO (JSRef b)
+lookupProp :: JSString -> Object -> EitherT T.Text IO JSRef
 lookupProp name obj = do
-    mbProp <- lift $ Foreign.getPropMaybe name obj
-    maybe (left err) return mbProp
+    prop <- liftIO $ Object.getProp name obj
+    if isUndefined prop
+      then left err
+      else return prop
   where
-    err = "failed to get property '" <> Foreign.fromJSString name <> "'."
+    err = "failed to get property '" <> JSString.textFromJSString name <> "'."
 
-lookupIntProp :: JSString -> JSRef a -> EitherT T.Text IO Int
+lookupIntProp :: JSString -> Object -> EitherT T.Text IO Int
 lookupIntProp name obj = do
     ref <- lookupProp name obj
-    mbInt <- lift $ Marshal.fromJSRef ref
+    mbInt <- liftIO $ Marshal.fromJSRef ref
     case mbInt of
       Nothing -> left "lookupIntProp: couldn't parse field as Int"
       Just x  -> return x
 
-lookupBoolProp :: JSString -> JSRef a -> EitherT T.Text IO Bool
+lookupBoolProp :: JSString -> Object -> EitherT T.Text IO Bool
 lookupBoolProp name obj = do
     ref <- lookupProp name obj
-    mbBool <- lift $ Marshal.fromJSRef ref
+    mbBool <- liftIO $ Marshal.fromJSRef ref
     case mbBool of
       Nothing -> left "lookupIntProp: couldn't parse field as Bool"
       Just x  -> return x
 
-lookupDoubleProp :: JSString -> JSRef a -> EitherT T.Text IO Double
+lookupDoubleProp :: JSString -> Object -> EitherT T.Text IO Double
 lookupDoubleProp name obj = do
     ref <- lookupProp name obj
-    mbDouble <- lift $ Marshal.fromJSRef ref
+    mbDouble <- liftIO $ Marshal.fromJSRef ref
     case mbDouble of
       Nothing -> left "lookupDoubleProp: couldn't parse field as Double"
       Just x  -> return x
@@ -328,7 +340,7 @@ data Handler
 
 registerEventHandler
     :: EventHandler (Bool -> IO ())
-    -> JSObject JSString
+    -> Object
        -- ^ Properties to register the event handler in
     -> IO ()
 registerEventHandler eh props = case eh of
@@ -346,12 +358,18 @@ registerEventHandler eh props = case eh of
 
     OnValueChange mkAct      -> register True  OnChangeE      $ \eventRef ->
       runEitherT $ do
-        valueRef <- lookupProp "value" =<< lookupProp "target" eventRef
-        return $ HandleEvent $ mkAct $ Foreign.fromJSString valueRef
+        targetRef <- lookupProp "target" eventRef
+        targetObj <- mbToEither "couldn't convert target object" $ fromJSRef targetRef
+        valueRef <- lookupProp "value" targetObj
+        txt <- mbToEither "could't convert Text" $ Marshal.fromJSRef valueRef
+        return $ HandleEvent $ mkAct txt
     OnCheckedChange mkAct    -> register False OnChangeE      $ \eventRef ->
       runEitherT $ do
-        valueRef <- lookupProp "checked" =<< lookupProp "target" eventRef
-        return $ HandleEvent $ mkAct $ Foreign.fromJSBool valueRef
+        checkedRef <- lookupProp "target" eventRef
+        checkedObj <- mbToEither "couldn't convert checked object" $ fromJSRef checkedRef
+        valueRef <- lookupProp "checked" checkedObj
+        checked <- mbToEither "couldn't convert Bool" $ Marshal.fromJSRef valueRef
+        return $ HandleEvent $ mkAct checked
     OnSubmit mkAct           -> register True  OnSubmitE      $ \_eventRef ->
       return $ Right $ HandleEvent mkAct
 
@@ -376,7 +394,10 @@ registerEventHandler eh props = case eh of
 
     OnScroll mkAct           -> register False OnScrollE      $ \eventRef ->
       runEitherT $ do
-        scrollTop <- lookupIntProp "scrollTop" =<<lookupProp "target" eventRef
+        targetRef <- lookupProp "target" eventRef
+        targetObj <- mbToEither "couldn't convert target object" $ fromJSRef targetRef
+        scrollTopRef <- lookupIntProp "scrollTop"  targetObj
+        scrollTop <- mbToEither "couldn't convert Int" $ Marshal.fromJSRef scrollTopRef
         return $ HandleEvent $ mkAct scrollTop
 
     OnWheel mkAct            -> register False OnWheelE       $ \eventRef ->
@@ -394,6 +415,12 @@ registerEventHandler eh props = case eh of
         return $ HandleEvent $ mkAct domDelta
 
   where
+    mbToEither err m = do
+      mbX <- liftIO m
+      case mbX of
+        Nothing -> left err
+        Just x  -> return x
+
     handleKeyEvent eventRef keys mkAct = runEitherT $ do
         keycode <- lookupIntProp "keyCode" eventRef <|>
                    lookupIntProp "which" eventRef
@@ -465,7 +492,8 @@ registerEventHandler eh props = case eh of
     register requireSyncRedraw reactEvent extractHandler = do
         -- FIXME (SM): memory leak to to AlwaysRetain. Need to hook-up ReactJS
         -- event handler table with GHCJS GC.
-        cb <- Foreign.syncCallback1 Foreign.AlwaysRetain False $ \eventRef -> do
+        -- TODO (BvD): Should we use ThrowWouldBlock or ContinueAsync?
+        cb <- Foreign.syncCallback1 Foreign.ThrowWouldBlock $ \eventRef -> do
             -- try to extract handler
             errOrHandler <- extractHandler eventRef
 
@@ -475,12 +503,17 @@ registerEventHandler eh props = case eh of
                   preventDefault eventRef
                   stopPropagation eventRef
                   -- print the error
-                  let eventName = Foreign.fromJSString $ reactEventName reactEvent
-                  eventType <- either (const "Unknown type") Foreign.fromJSString <$>
-                    runEitherT (lookupProp "type" eventRef)
+                  let eventName = reactEventName reactEvent
+
+                  eTypeRef <- runEitherT (lookupProp "type" eventRef)
+                  eventType <- case eTypeRef of
+                    Left _err -> return "Unknown type"
+                    Right typeRef -> Marshal.fromJSRefUnchecked typeRef
+
                   putStrLn $ unlines
                     [ "blaze-react - event handling error: " ++ T.unpack err
-                    , "Event was " ++ eventName ++ " of type " ++ eventType
+                    , "Event was " ++ JSString.unpack eventName ++
+                      " of type "  ++ JSString.unpack eventType
                     ]
               Right IgnoreEvent -> return ()
               Right (HandleEvent mkHandler) -> do
@@ -491,4 +524,4 @@ registerEventHandler eh props = case eh of
                   handler <- mkHandler
                   handler requireSyncRedraw
 
-        Foreign.setProp (reactEventName reactEvent) cb props
+        Object.setProp (reactEventName reactEvent) (jsref cb) props

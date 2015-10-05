@@ -16,6 +16,8 @@ module Text.Blaze.Event.Internal
     ) where
 
 import           Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad (guard)
 
 import qualified Data.ByteString           as BS
 import qualified Data.Text                 as T
@@ -24,9 +26,10 @@ import           Data.Time.Clock           (UTCTime)
 import           Text.Blaze.Event.Keycode  (Keycode)
 import           Text.Blaze.Event.Charcode (Charcode)
 
-import           GHCJS.Foreign (getPropMaybe)
-import qualified GHCJS.Marshal as Marshal
-import           GHCJS.Types (JSString, JSRef)
+import           JavaScript.Object (getProp)
+import           JavaScript.Object.Internal (Object(Object))
+import           GHCJS.Marshal (FromJSRef, fromJSRef)
+import           GHCJS.Types (JSString, JSRef, jsref, isUndefined)
 import           GHCJS.Foreign.QQ (js)
 
 
@@ -145,22 +148,22 @@ data DomRect =
      , domRectWidth  :: !Int
      } deriving (Eq, Show)
 
-instance Marshal.FromJSRef DomNode where
+instance FromJSRef DomNode where
     fromJSRef nodeRef = runMaybeT $
         DomNode <$> lookupProp' "className"
                 <*> lookupProp' "id"
                 <*> lookupProp' "tagName"
                 <*> lookupBoundingClientRect
       where
+        lookupProp' :: (FromJSRef a) => JSString -> MaybeT IO a
         lookupProp' name = lookupProp name nodeRef
 
         lookupBoundingClientRect :: MaybeT IO DomRect
         lookupBoundingClientRect = MaybeT $ do
            rectRef <- [js| `nodeRef.getBoundingClientRect() |]
-           Marshal.fromJSRef rectRef
+           fromJSRef rectRef
 
-
-instance Marshal.FromJSRef DomRect where
+instance FromJSRef DomRect where
     fromJSRef rectRef = runMaybeT $
         DomRect <$> lookupProp' "bottom"
                 <*> lookupProp' "height"
@@ -171,8 +174,8 @@ instance Marshal.FromJSRef DomRect where
       where
         lookupProp' name = lookupProp name rectRef
 
-lookupProp :: (Marshal.FromJSRef b) => JSString -> JSRef a -> MaybeT IO b
+lookupProp :: (FromJSRef b) => JSString -> JSRef -> MaybeT IO b
 lookupProp name obj = do
-    propRef <- MaybeT $ getPropMaybe name obj
-    propVal <- MaybeT $ Marshal.fromJSRef propRef
-    return propVal
+    r <- liftIO $ getProp name (Object obj)
+    guard (isUndefined r)
+    MaybeT $ fromJSRef r
