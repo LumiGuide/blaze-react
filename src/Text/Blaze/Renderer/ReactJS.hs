@@ -33,8 +33,8 @@ import           GHCJS.Types           (JSRef, isUndefined, jsref)
 import           Data.JSString         (JSString)
 import qualified Data.JSString.Text    as JSString (textToJSString, textFromJSString)
 import qualified Data.JSString         as JSString
-import           JavaScript.Object     (Object)
 import qualified JavaScript.Object     as Object
+import           JavaScript.Object.Internal (Object(Object))
 import           JavaScript.Array      (MutableJSArray)
 import qualified JavaScript.Array      as Array
 
@@ -359,15 +359,13 @@ registerEventHandler eh props = case eh of
     OnValueChange mkAct      -> register True  OnChangeE      $ \eventRef ->
       runEitherT $ do
         targetRef <- lookupProp "target" eventRef
-        targetObj <- mbToEither "couldn't convert target object" $ fromJSRef targetRef
-        valueRef <- lookupProp "value" targetObj
+        valueRef <- lookupProp "value" $ Object targetRef
         txt <- mbToEither "could't convert Text" $ Marshal.fromJSRef valueRef
         return $ HandleEvent $ mkAct txt
     OnCheckedChange mkAct    -> register False OnChangeE      $ \eventRef ->
       runEitherT $ do
         checkedRef <- lookupProp "target" eventRef
-        checkedObj <- mbToEither "couldn't convert checked object" $ fromJSRef checkedRef
-        valueRef <- lookupProp "checked" checkedObj
+        valueRef <- lookupProp "checked" $ Object checkedRef
         checked <- mbToEither "couldn't convert Bool" $ Marshal.fromJSRef valueRef
         return $ HandleEvent $ mkAct checked
     OnSubmit mkAct           -> register True  OnSubmitE      $ \_eventRef ->
@@ -395,9 +393,7 @@ registerEventHandler eh props = case eh of
     OnScroll mkAct           -> register False OnScrollE      $ \eventRef ->
       runEitherT $ do
         targetRef <- lookupProp "target" eventRef
-        targetObj <- mbToEither "couldn't convert target object" $ fromJSRef targetRef
-        scrollTopRef <- lookupIntProp "scrollTop"  targetObj
-        scrollTop <- mbToEither "couldn't convert Int" $ Marshal.fromJSRef scrollTopRef
+        scrollTop <- lookupIntProp "scrollTop"  $ Object targetRef
         return $ HandleEvent $ mkAct scrollTop
 
     OnWheel mkAct            -> register False OnWheelE       $ \eventRef ->
@@ -495,17 +491,18 @@ registerEventHandler eh props = case eh of
         -- TODO (BvD): Should we use ThrowWouldBlock or ContinueAsync?
         cb <- Foreign.syncCallback1 Foreign.ThrowWouldBlock $ \eventRef -> do
             -- try to extract handler
-            errOrHandler <- extractHandler eventRef
+            let eventObj = Object eventRef
+            errOrHandler <- extractHandler eventObj
 
             case errOrHandler of
               Left err -> do
                   -- prevent default action and cancel propagation
-                  preventDefault eventRef
-                  stopPropagation eventRef
+                  preventDefault eventObj
+                  stopPropagation eventObj
                   -- print the error
                   let eventName = reactEventName reactEvent
 
-                  eTypeRef <- runEitherT (lookupProp "type" eventRef)
+                  eTypeRef <- runEitherT (lookupProp "type" eventObj)
                   eventType <- case eTypeRef of
                     Left _err -> return "Unknown type"
                     Right typeRef -> Marshal.fromJSRefUnchecked typeRef
@@ -518,8 +515,8 @@ registerEventHandler eh props = case eh of
               Right IgnoreEvent -> return ()
               Right (HandleEvent mkHandler) -> do
                   -- prevent default action and cancel propagation
-                  preventDefault eventRef
-                  stopPropagation eventRef
+                  preventDefault eventObj
+                  stopPropagation eventObj
                   -- run the handler. This triggers a redraw.
                   handler <- mkHandler
                   handler requireSyncRedraw
