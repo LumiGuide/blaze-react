@@ -28,8 +28,8 @@ import           Text.Blaze.Event.Charcode (Charcode)
 
 import           JavaScript.Object (getProp)
 import           JavaScript.Object.Internal (Object(Object))
-import           GHCJS.Marshal (FromJSRef, fromJSRef)
-import           GHCJS.Types (JSString, JSRef, jsref, isUndefined)
+import           GHCJS.Marshal (FromJSVal, fromJSVal)
+import           GHCJS.Types (JSString, JSVal, isUndefined)
 import           GHCJS.Foreign.QQ (js)
 
 
@@ -148,23 +148,23 @@ data DomRect =
      , domRectWidth  :: !Int
      } deriving (Eq, Show)
 
-instance FromJSRef DomNode where
-    fromJSRef nodeRef = runMaybeT $
+instance FromJSVal DomNode where
+    fromJSVal nodeRef = runMaybeT $
         DomNode <$> lookupProp' "className"
                 <*> lookupProp' "id"
                 <*> lookupProp' "tagName"
                 <*> lookupBoundingClientRect
       where
-        lookupProp' :: (FromJSRef a) => JSString -> MaybeT IO a
+        lookupProp' :: (FromJSVal a) => JSString -> MaybeT IO a
         lookupProp' name = lookupProp name nodeRef
 
         lookupBoundingClientRect :: MaybeT IO DomRect
         lookupBoundingClientRect = MaybeT $ do
            rectRef <- [js| `nodeRef.getBoundingClientRect() |]
-           fromJSRef rectRef
+           fromJSVal rectRef
 
-instance FromJSRef DomRect where
-    fromJSRef rectRef = runMaybeT $
+instance FromJSVal DomRect where
+    fromJSVal rectRef = runMaybeT $
         DomRect <$> lookupProp' "bottom"
                 <*> lookupProp' "height"
                 <*> lookupProp' "left"
@@ -174,8 +174,8 @@ instance FromJSRef DomRect where
       where
         lookupProp' name = lookupProp name rectRef
 
-lookupProp :: (FromJSRef b) => JSString -> JSRef -> MaybeT IO b
+lookupProp :: (FromJSVal b) => JSString -> JSVal -> MaybeT IO b
 lookupProp name obj = do
     r <- liftIO $ getProp name (Object obj)
     guard (isUndefined r)
-    MaybeT $ fromJSRef r
+    MaybeT $ fromJSVal r

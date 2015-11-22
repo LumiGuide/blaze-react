@@ -20,7 +20,7 @@ import           Data.Maybe            (fromMaybe)
 import           Data.Monoid           ((<>))
 import qualified Data.Text             as T
 
-import           GHCJS.Types           (JSRef, JSString,)
+import           GHCJS.Types           (JSVal, JSString,)
 import qualified GHCJS.Foreign         as Foreign
 import           GHCJS.Foreign.QQ      (js, js_)
 import           GHCJS.Foreign.Callback   (Callback)
@@ -50,29 +50,29 @@ import           Text.Blaze.Event.Internal (LifeCycleEventHandler(..))
 foreign import javascript unsafe
     "h$reactjs.queryLifeCycleNode($1, $2)"
     queryLifeCycleNode
-        :: JSRef
+        :: JSVal
         -> Int
-        -> IO JSRef
+        -> IO JSVal
 
 foreign import javascript unsafe
     "h$reactjs.mountApp($1, $2, $3, $4)"
     mountReactApp
-        :: JSRef -- ^ Browser DOM node
-        -> Callback (JSRef -> IO ())
+        :: JSVal -- ^ Browser DOM node
+        -> Callback (JSVal -> IO ())
            -- ^ render callback that stores the created nodes in the 'node'
            -- property of the given object.
-        -> Callback (JSRef -> IO ())
-        -> Callback (JSRef -> IO ())
-        -> IO JSRef
+        -> Callback (JSVal -> IO ())
+        -> Callback (JSVal -> IO ())
+        -> IO JSVal
 
 foreign import javascript unsafe
     "h$reactjs.syncRedrawApp($1)"
-    syncRedrawApp :: JSRef -> IO ()
+    syncRedrawApp :: JSVal -> IO ()
 
 foreign import javascript unsafe
     "h$reactjs.attachRouteWatcher($1)"
     attachPathWatcher
-        :: Callback (JSRef -> IO ())
+        :: Callback (JSVal -> IO ())
            -- ^ Callback that handles a route change.
         -> IO ()
 
@@ -148,7 +148,7 @@ runApp (App initialState initialRequests apply renderAppState) = do
             action <- req
             handleAction action False
 
-        mkRenderCb :: IO (Callback (JSRef -> IO ()))
+        mkRenderCb :: IO (Callback (JSVal -> IO ()))
         mkRenderCb = do
             Callback.syncCallback1 Callback.ThrowWouldBlock $ \objRef -> do
                 state <- readIORef stateVar
@@ -161,7 +161,7 @@ runApp (App initialState initialRequests apply renderAppState) = do
     onPathChange <- Callback.syncCallback1 Callback.ThrowWouldBlock $
       \pathStrRef -> do
         currentPath <- readIORef urlFragmentVar
-        pathStr <- Marshal.fromJSRefUnchecked pathStrRef
+        pathStr <- Marshal.fromJSValUnchecked pathStrRef
         let newPath = T.drop 1 $ JSString.textFromJSString pathStr
         -- FIXME (asayers): if the route is the same, it seems to trigger a
         -- full-page reload
@@ -170,7 +170,7 @@ runApp (App initialState initialRequests apply renderAppState) = do
           handleAction (PathChangedTo newPath) True
     attachPathWatcher onPathChange
 
-    let mkDidUpdateCb :: IO (Callback (JSRef -> IO ()))
+    let mkDidUpdateCb :: IO (Callback (JSVal -> IO ()))
         mkDidUpdateCb =
             Callback.syncCallback1 Callback.ThrowWouldBlock $ \objRef -> do
                 lifeCycleEventHandlers <- readIORef lifeCycleEventHandlersVar
@@ -178,14 +178,14 @@ runApp (App initialState initialRequests apply renderAppState) = do
                   case eh of
                     OnDomDidUpdate f -> do
                         node <- queryLifeCycleNode objRef elemId
-                        mbDomNode <- Marshal.fromJSRef node
+                        mbDomNode <- Marshal.fromJSVal node
                         case mbDomNode of
                           Just domNode -> do
                             act <- f domNode
                             handleAction act False
                           Nothing -> error "mkDidUpdateDb: couldn't find dom node"
 
-        mkShouldUpdateCb :: IO (Callback (JSRef -> IO ()))
+        mkShouldUpdateCb :: IO (Callback (JSVal -> IO ()))
         mkShouldUpdateCb =
             Callback.syncCallback1 Callback.ThrowWouldBlock $ \objRef -> do
               result <- readIORef shouldUpdateVar
