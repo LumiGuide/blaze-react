@@ -177,5 +177,5 @@ instance FromJSVal DomRect where
 lookupProp :: (FromJSVal b) => JSString -> JSVal -> MaybeT IO b
 lookupProp name obj = do
     r <- liftIO $ getProp name (Object obj)
-    guard (isUndefined r)
+    guard $ not $ isUndefined r
     MaybeT $ fromJSVal r

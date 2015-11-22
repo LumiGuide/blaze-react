@@ -183,7 +183,7 @@ runApp (App initialState initialRequests apply renderAppState) = do
                           Just domNode -> do
                             act <- f domNode
                             handleAction act False
-                          Nothing -> error "mkDidUpdateDb: couldn't find dom node"
+                          Nothing -> error "mkDidUpdateCb: couldn't find dom node"
 
         mkShouldUpdateCb :: IO (Callback (JSVal -> IO ()))
         mkShouldUpdateCb =
