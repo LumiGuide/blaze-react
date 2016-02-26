@@ -33,7 +33,7 @@ applyRTAction action _oldPath = case action of
 
 renderRTState :: RTState -> WindowState RTAction
 renderRTState path = WindowState
-    { _wsPath = path                   -- ^ Display the current path
+    { _wsPath = path                   -- Display the current path
     , _wsBody = renderBody path
     }
 
