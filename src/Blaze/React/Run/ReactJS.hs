@@ -94,10 +94,10 @@ atAnimationFrame io = do
           (Callback.releaseCallback cb >> io)
     requestAnimationFrame cb
 
-runApp' :: (Show act) => App st act -> IO ()
+runApp' :: App st act -> IO ()
 runApp' = runApp . ignoreWindowActions
 
-runApp :: forall st act. (Show act) => App st (WithWindowActions act) -> IO ()
+runApp :: forall st act. App st (WithWindowActions act) -> IO ()
 runApp (App initialState initialRequests apply renderAppState) = do
     -- create root element in body for the app
     root <- [js| document.createElement('div') |]

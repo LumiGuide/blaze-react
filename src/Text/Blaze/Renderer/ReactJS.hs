@@ -112,9 +112,8 @@ fromChoiceString EmptyChoiceString = id
 -- This function is morally pure.
 --
 render
-    :: forall act.
-       Show act
-    => (act -> Bool -> IO ())  -- ^ Callback for actions raised by event handlers.
+    :: forall act
+     . (act -> Bool -> IO ())  -- ^ Callback for actions raised by event handlers.
     -> Markup act
     -> IO (ReactJSNodes, [(Int, LifeCycleEventHandler act)])
 render handleAct0 markup = do
@@ -226,8 +225,7 @@ toJSVal_hashMap hashmap = do
     return obj
 
 renderHtml
-    :: Show act
-    => (act -> Bool -> IO ())
+    :: (act -> Bool -> IO ())
     -> Markup act
     -> IO (ReactJSNode, [(Int, LifeCycleEventHandler act)])
 renderHtml handleAction html = do
