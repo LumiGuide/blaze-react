@@ -13,7 +13,6 @@ import qualified Data.ByteString         as S
 import qualified Data.ByteString.Char8   as SBC
 import qualified Data.HashMap.Strict     as HMS
 import           Data.List               (isInfixOf)
-import           Data.Monoid
 import qualified Data.Text               as T
 
 import Text.Blaze.Internal

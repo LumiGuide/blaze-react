@@ -14,7 +14,7 @@ module Text.Blaze.Renderer.ReactJS
 import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad.Trans.Either ( runEitherT, EitherT(..), left)
+import           Control.Monad.Trans.Except ( runExceptT, ExceptT(..), throwE)
 
 import qualified Data.ByteString.Char8 as SBC
 import qualified Data.HashMap.Strict   as HMS
@@ -298,37 +298,37 @@ reactEventName ev = case ev of
     OnScrollE      -> "onScroll"
     OnWheelE       -> "onWheel"
 
-lookupProp :: JSString -> Object -> EitherT T.Text IO JSVal
+lookupProp :: JSString -> Object -> ExceptT T.Text IO JSVal
 lookupProp name obj = do
     prop <- liftIO $ Object.getProp name obj
     if isUndefined prop
-      then left err
+      then throwE err
       else return prop
   where
     err = "failed to get property '" <> JSString.textFromJSString name <> "'."
 
-lookupIntProp :: JSString -> Object -> EitherT T.Text IO Int
+lookupIntProp :: JSString -> Object -> ExceptT T.Text IO Int
 lookupIntProp name obj = do
     ref <- lookupProp name obj
     mbInt <- liftIO $ Marshal.fromJSVal ref
     case mbInt of
-      Nothing -> left "lookupIntProp: couldn't parse field as Int"
+      Nothing -> throwE "lookupIntProp: couldn't parse field as Int"
       Just x  -> return x
 
-lookupBoolProp :: JSString -> Object -> EitherT T.Text IO Bool
+lookupBoolProp :: JSString -> Object -> ExceptT T.Text IO Bool
 lookupBoolProp name obj = do
     ref <- lookupProp name obj
     mbBool <- liftIO $ Marshal.fromJSVal ref
     case mbBool of
-      Nothing -> left "lookupIntProp: couldn't parse field as Bool"
+      Nothing -> throwE "lookupIntProp: couldn't parse field as Bool"
       Just x  -> return x
 
-lookupDoubleProp :: JSString -> Object -> EitherT T.Text IO Double
+lookupDoubleProp :: JSString -> Object -> ExceptT T.Text IO Double
 lookupDoubleProp name obj = do
     ref <- lookupProp name obj
     mbDouble <- liftIO $ Marshal.fromJSVal ref
     case mbDouble of
-      Nothing -> left "lookupDoubleProp: couldn't parse field as Double"
+      Nothing -> throwE "lookupDoubleProp: couldn't parse field as Double"
       Just x  -> return x
 
 data Handler
@@ -355,16 +355,16 @@ registerEventHandler eh props = case eh of
       return $ Right $ HandleEvent mkAct
 
     OnValueChange mkAct      -> register True  OnChangeE      $ \eventRef ->
-      runEitherT $ do
+      runExceptT $ do
         targetRef <- lookupProp "target" eventRef
         valueRef <- lookupProp "value" $ Object targetRef
-        txt <- mbToEither "could't convert Text" $ Marshal.fromJSVal valueRef
+        txt <- mbToExcept "could't convert Text" $ Marshal.fromJSVal valueRef
         return $ HandleEvent $ mkAct txt
     OnCheckedChange mkAct    -> register False OnChangeE      $ \eventRef ->
-      runEitherT $ do
+      runExceptT $ do
         checkedRef <- lookupProp "target" eventRef
         valueRef <- lookupProp "checked" $ Object checkedRef
-        checked <- mbToEither "couldn't convert Bool" $ Marshal.fromJSVal valueRef
+        checked <- mbToExcept "couldn't convert Bool" $ Marshal.fromJSVal valueRef
         return $ HandleEvent $ mkAct checked
     OnSubmit mkAct           -> register True  OnSubmitE      $ \_eventRef ->
       return $ Right $ HandleEvent mkAct
@@ -378,24 +378,24 @@ registerEventHandler eh props = case eh of
     OnMouseUp btns mkAct     -> register False OnMouseUpE     $ \eventRef ->
       handleMouseEvent eventRef btns mkAct
     OnMouseMove mkAct        -> register False OnMouseMoveE   $ \eventRef ->
-      runEitherT $ HandleEvent . mkAct <$> getMousePosition eventRef
+      runExceptT $ HandleEvent . mkAct <$> getMousePosition eventRef
     OnMouseEnter mkAct       -> register False OnMouseEnterE  $ \eventRef ->
-      runEitherT $ HandleEvent . mkAct <$> getMousePosition eventRef
+      runExceptT $ HandleEvent . mkAct <$> getMousePosition eventRef
     OnMouseLeave mkAct       -> register False OnMouseLeaveE  $ \eventRef ->
-      runEitherT $ HandleEvent . mkAct <$> getMousePosition eventRef
+      runExceptT $ HandleEvent . mkAct <$> getMousePosition eventRef
     OnMouseOver mkAct        -> register False OnMouseOverE   $ \eventRef ->
-      runEitherT $ HandleEvent . mkAct <$> getMousePosition eventRef
+      runExceptT $ HandleEvent . mkAct <$> getMousePosition eventRef
     OnMouseOut mkAct         -> register False OnMouseOutE    $ \eventRef ->
-      runEitherT $ HandleEvent . mkAct <$> getMousePosition eventRef
+      runExceptT $ HandleEvent . mkAct <$> getMousePosition eventRef
 
     OnScroll mkAct           -> register False OnScrollE      $ \eventRef ->
-      runEitherT $ do
+      runExceptT $ do
         targetRef <- lookupProp "target" eventRef
         scrollTop <- lookupIntProp "scrollTop"  $ Object targetRef
         return $ HandleEvent $ mkAct scrollTop
 
     OnWheel mkAct            -> register False OnWheelE       $ \eventRef ->
-      runEitherT $ do
+      runExceptT $ do
         dx <- lookupDoubleProp "deltaX" eventRef
         dy <- lookupDoubleProp "deltaY" eventRef
         dz <- lookupDoubleProp "deltaZ" eventRef
@@ -405,24 +405,24 @@ registerEventHandler eh props = case eh of
               0 -> return $ PixelDelta deltaValue
               1 -> return $ LineDelta deltaValue
               2 -> return $ PageDelta deltaValue
-              _ -> left "registerEventHandler: unrecognized delta mode"
+              _ -> throwE "registerEventHandler: unrecognized delta mode"
         return $ HandleEvent $ mkAct domDelta
 
   where
-    mbToEither err m = do
+    mbToExcept err m = do
       mbX <- liftIO m
       case mbX of
-        Nothing -> left err
+        Nothing -> throwE err
         Just x  -> return x
 
-    handleKeyEvent eventRef keys mkAct = runEitherT $ do
+    handleKeyEvent eventRef keys mkAct = runExceptT $ do
         keycode <- lookupIntProp "keyCode" eventRef <|>
                    lookupIntProp "which" eventRef
         if keycode `elem` map unKeycode keys
           then return $ HandleEvent mkAct
           else return $ IgnoreEvent
 
-    handleCharEvent eventRef chars mkAct = runEitherT $ do
+    handleCharEvent eventRef chars mkAct = runExceptT $ do
         charcode <- lookupIntProp "charCode" eventRef <|>
                     lookupIntProp "which" eventRef
         if charcode `elem` map unCharcode chars
@@ -435,22 +435,22 @@ registerEventHandler eh props = case eh of
         -> [MouseButton]
         -> (MousePosition -> IO (Bool -> IO ()))
         -> IO (Either T.Text Handler)
-    handleMouseEvent eventRef btns mkAct = runEitherT $ do
+    handleMouseEvent eventRef btns mkAct = runExceptT $ do
         button <- getMouseButton eventRef
         if button `elem` btns
           then HandleEvent . mkAct <$> getMousePosition eventRef
           else return IgnoreEvent
 
-    getMouseButton :: ReactJSEvent -> EitherT T.Text IO MouseButton
+    getMouseButton :: ReactJSEvent -> ExceptT T.Text IO MouseButton
     getMouseButton eventRef = do
         button <- lookupIntProp "button" eventRef
         case button of
           0 -> return LeftButton
           1 -> return MiddleButton
           2 -> return RightButton
-          _ -> left "getMouseButton: couldn't parse button code"
+          _ -> throwE "getMouseButton: couldn't parse button code"
 
-    getMousePosition :: ReactJSEvent -> EitherT T.Text IO MousePosition
+    getMousePosition :: ReactJSEvent -> ExceptT T.Text IO MousePosition
     getMousePosition eventRef = do
         clientX <- lookupIntProp "clientX" eventRef
         clientY <- lookupIntProp "clientY" eventRef
@@ -500,7 +500,7 @@ registerEventHandler eh props = case eh of
                   -- print the error
                   let eventName = reactEventName reactEvent
 
-                  eTypeRef <- runEitherT (lookupProp "type" eventObj)
+                  eTypeRef <- runExceptT (lookupProp "type" eventObj)
                   eventType <- case eTypeRef of
                     Left _err -> return "Unknown type"
                     Right typeRef -> Marshal.fromJSValUnchecked typeRef

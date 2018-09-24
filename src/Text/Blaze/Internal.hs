@@ -124,10 +124,14 @@ data ChoiceString
     -- | Empty string
     | EmptyChoiceString
 
+instance Semigroup ChoiceString where
+    (<>) = AppendChoiceString
+    {-# INLINE (<>) #-}
+
 instance Monoid ChoiceString where
     mempty = EmptyChoiceString
     {-# INLINE mempty #-}
-    mappend = AppendChoiceString
+    mappend = (<>)
     {-# INLINE mappend #-}
 
 instance IsString ChoiceString where
@@ -173,10 +177,14 @@ data MarkupM act a
 --
 type Markup e = MarkupM e ()
 
-instance Monoid a => Monoid (MarkupM ev a) where
+instance Semigroup a => Semigroup (MarkupM ev a) where
+    x <> y = Append x y
+    {-# INLINE (<>) #-}
+
+instance Semigroup a => Monoid (MarkupM ev a) where
     mempty = Empty
     {-# INLINE mempty #-}
-    mappend x y = Append x y
+    mappend = (<>)
     {-# INLINE mappend #-}
     mconcat = foldr Append Empty
     {-# INLINE mconcat #-}
@@ -212,14 +220,17 @@ newtype Tag = Tag { unTag :: StaticString }
 --
 newtype Attribute ev = Attribute (forall a. MarkupM ev a -> MarkupM ev a)
 
+instance Semigroup (Attribute ev) where
+    Attribute f <> Attribute g = Attribute (g . f)
+
 instance Monoid (Attribute ev) where
-    mempty                            = Attribute id
-    Attribute f `mappend` Attribute g = Attribute (g . f)
+    mempty = Attribute id
+    mappend = (<>)
 
 -- | The type for the value part of an attribute.
 --
 newtype AttributeValue = AttributeValue { unAttributeValue :: ChoiceString }
-    deriving (IsString, Monoid)
+    deriving (IsString, Semigroup, Monoid)
 
 
 -- custom tags
